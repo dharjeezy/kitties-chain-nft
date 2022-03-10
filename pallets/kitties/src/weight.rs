@@ -33,7 +33,7 @@ pub trait WeightInfo {
 }
 /// Weight functions for `pallet_kitties`.
 pub struct KittiesWeight<T>(PhantomData<T>);
-impl<T: frame_system::Config> pallet_kitties::WeightInfo for WeightInfo<T> {
+impl<T: frame_system::Config> WeightInfo for KittiesWeight<T> {
 	// Storage: RandomnessCollectiveFlip RandomMaterial (r:1 w:0)
 	// Storage: SubstrateKitties KittyCnt (r:1 w:1)
 	// Storage: SubstrateKitties KittiesOwned (r:1 w:1)

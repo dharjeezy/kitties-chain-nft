@@ -10,8 +10,8 @@ pub use pallet::*;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
-
-pub use weights::KittiesWeight;
+mod weight;
+pub use weight::KittiesWeight;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -25,11 +25,11 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use sp_io::hashing::blake2_128;
 	use scale_info::TypeInfo;
-	use crate::weights::WeightInfo;
+	use crate::weight::WeightInfo;
 
 	#[cfg(feature = "std")]
 	use frame_support::serde::{Deserialize, Serialize};
-	use frame_system::{Origin, WeightInfo};
+	use frame_system::{Origin};
 
 	// We define <BalanceOf<T>> and AccountOf<T> types, and use them in the Kitty.
 	// If you wonder what the first line means in Rust,
