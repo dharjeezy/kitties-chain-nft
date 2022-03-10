@@ -11,6 +11,8 @@ pub use pallet::*;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+pub use weights::KittiesWeight;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support:: {
@@ -23,10 +25,11 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use sp_io::hashing::blake2_128;
 	use scale_info::TypeInfo;
+	use crate::weights::WeightInfo;
 
 	#[cfg(feature = "std")]
 	use frame_support::serde::{Deserialize, Serialize};
-	use frame_system::Origin;
+	use frame_system::{Origin, WeightInfo};
 
 	// We define <BalanceOf<T>> and AccountOf<T> types, and use them in the Kitty.
 	// If you wonder what the first line means in Rust,
@@ -95,6 +98,8 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type MaxKittyOwned: Get<u32>;
+
+		type WeightInfo: WeightInfo;
 	}
 
 	// Errors.
@@ -193,7 +198,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		// create_kitty
-		#[pallet::weight(100)]
+		#[pallet::weight(<T as Config>::WeightInfo::create_kitty())]
 		pub fn create_kitty(origin: OriginFor<T>) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 			let kitty_id = Self::mint(&sender, None, None)?;
@@ -206,7 +211,7 @@ pub mod pallet {
 		// set_price
 		// set the price for a Kitty
 		// updates Kitty and updates storage.
-		#[pallet::weight(100)]
+		#[pallet::weight(<T as Config>::WeightInfo::set_price())]
 		pub fn set_price(
 			origin: OriginFor<T>,
 			kitty_id: T::Hash,
@@ -233,7 +238,7 @@ pub mod pallet {
 		}
 
 		// transfer
-		#[pallet::weight(100)]
+		#[pallet::weight(<T as Config>::WeightInfo::transfer())]
 		pub fn transfer(
 			origin: OriginFor<T>,
 			to: T::AccountId,
@@ -259,8 +264,66 @@ pub mod pallet {
 		}
 
 		// buy_kitty
+		#[transactional]
+		#[pallet::weight(100)]
+		pub fn buy_kitty(
+			origin: OriginFor<T>,
+			kitty_id: T::Hash,
+			bid_price: BalanceOf<T>
+		) -> DispatchResult {
+			let buyer = ensure_signed(origin)?;
+
+			// Check the kitty exists and buyer is not the current kitty owner
+			let kitty = Self::kitties(&kitty_id).ok_or(<Error<T>>::KittyNotExist)?;
+			ensure!(kitty.owner != buyer, <Error<T>>::BuyerIsKittyOwner);
+
+			// check the kitty is for sale and the kitty ask price <= bid_price
+			if let Some(ask_price) = kitty.price {
+				ensure!(ask_price <= bid_price, <Error<T>>::KittyBidPriceTooLow);
+			} else {
+				Err(<Error<T>>::KittyNotForSale)?;
+			}
+
+			// Check the buyer has enough free balance
+			ensure!(T::Currency::free_balance(&buyer) >= bid_price, <Error<T>>::NotEnoughBalance);
+
+			// Verify the buyer has the capacity to receive one more kitty
+			let to_owned = <KittiesOwned<T>>::get(&buyer);
+			ensure!((to_owned.len() as u32) < T::MaxKittyOwned::get(), <Error<T>>::ExceedMaxKittyOwned);
+
+			let seller = kitty.owner.clone();
+
+			// Transfer the amount from buyer to seller
+			T::Currency::transfer(&buyer, &seller, bid_price, ExistenceRequirement::KeepAlive)?;
+
+			// Transfer the kitty from seller to buyer
+			Self::transfer_kitty_to(&kitty_id, &buyer)?;
+
+			Self::deposit_event(Event::Bought(buyer, seller, kitty_id, bid_price));
+
+			Ok(())
+		}
 
 		// breed_kitty
+		// Breed two kitties to create a new generation
+		// of kitties.
+		#[pallet::weight(100)]
+		pub fn breed_kitty(
+			origin: OriginFor<T>,
+			kid1: T::Hash,
+			kid2: T::Hash
+		) -> DispatchResult {
+			let sender = ensure_signed(origin)?;
+
+			// Check: Verify `sender` owns both kitties (and both kitties exist).
+			ensure!(Self::is_kitty_owner(&kid1, &sender)?, <Error<T>>::NotKittyOwner);
+			ensure!(Self::is_kitty_owner(&kid2, &sender)?, <Error<T>>::NotKittyOwner);
+
+			let new_dna = Self::breed_dna(&kid1, &kid2)?;
+			Self::mint(&sender, Some(new_dna), None)?;
+
+			Ok(())
+		}
 	}
 
 	// our helper functions
@@ -393,6 +456,20 @@ pub mod pallet {
 			}).map_err(|_| <Error<T>>::ExceedMaxKittyOwned)?;
 
 			Ok(())
+		}
+
+		// The logic behind breeding two Kitties is to multiply each corresponding DNA segment from two Kitties,
+		// which will produce a new DNA sequence.
+		// Then, that DNA is used when minting a new Kitty.
+		pub fn breed_dna(kid1: &T::Hash, kid2: &T::Hash) -> Result<[u8; 16], Error<T>> {
+			let dna1 = Self::kitties(kid1).ok_or(<Error<T>>::KittyNotExist)?.dna;
+			let dna2 = Self::kitties(kid2).ok_or(<Error<T>>::KittyNotExist)?.dna;
+
+			let mut new_dna = Self::gen_dna();
+			for i in 0..new_dna.len() {
+				new_dna[i] = new_dna[i] & dna1[i] | (!new_dna[i] & dna2[i]);
+			}
+			Ok(new_dna)
 		}
 
 

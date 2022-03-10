@@ -290,6 +290,7 @@ impl pallet_kitties::Config for Runtime {
 	// Here we have abstracted out the randomness generation implementation (RandomnessCollectiveFlip) from its interface (Randomness<Self::Hash, Self::BlockNumber> trait).
 	type KittyRandomness = RandomnessCollectiveFlip;
 	type MaxKittyOwned = MaxKittyOwned;
+	type WeightInfo = pallet_kitties::KittiesWeight<Runtime>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
